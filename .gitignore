@@ -1,14 +1,43 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
 .venv/
 venv/
+ENV/
+env/
 
-# vosk model (large binary, download separately)
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code session dirs / worktrees
+.claude/
+.claude/worktrees/
+
+# Logs
+*.log
+
+# Vosk model (large binary, download separately)
 model/
 vosk-model-*/
 vosk-model-*.zip
 
-# local generated artifacts
+# Audio captures (if/when we add recording)
+*.wav
+
+# Local generated artifacts (regenerated from JMRI XML)
 vocab.json
 aliases.json
