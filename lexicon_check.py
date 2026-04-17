@@ -1,31 +1,23 @@
-"""Check vocab.json tokens against a Vosk model lexicon; flag OOV words.
+"""Check vocab.json tokens against the Vosk model lexicon; flag OOV words.
+
+Uses `Model.find_word()` which returns -1 for words not in the lexicon.
+(The small Vosk model doesn't ship a readable words.txt, so the C-API
+lookup is the only reliable check.)
 
 Vosk's pre-compiled HCLG graph can only emit words already in its lexicon —
-custom pronunciations require rebuilding the graph, which is out of scope here.
-So for OOV tokens the workflow is: edit aliases.json to map each OOV word to
-a sequence of in-lexicon tokens that *sound* close enough. The daemon applies
-those substitutions when building its grammar.
+custom pronunciations require rebuilding the graph, which is out of scope
+here. So for OOV tokens the workflow is: edit aliases.json to map each
+OOV word to a sequence of in-lexicon tokens that *sound* close enough.
+The daemon applies those substitutions when building its grammar.
 """
 
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
-
-def load_lexicon(model_dir: Path) -> set[str]:
-    candidates = list(model_dir.rglob("words.txt"))
-    if not candidates:
-        raise FileNotFoundError(f"no words.txt under {model_dir}")
-    lex: set[str] = set()
-    for line in candidates[0].read_text().splitlines():
-        if not line:
-            continue
-        word = line.split()[0]
-        if word.startswith(("<", "#", "!", "[")):
-            continue
-        lex.add(word.lower())
-    return lex
+from vosk import Model, SetLogLevel
 
 
 def collect_tokens(vocab: dict) -> set[str]:
@@ -33,14 +25,17 @@ def collect_tokens(vocab: dict) -> set[str]:
             for item in vocab[kind] for tok in item["tokens"]}
 
 
-def resolve(tok: str, aliases: dict, lex: set[str]) -> list[str] | None:
-    """Return the in-lexicon token sequence for tok, or None if unresolved."""
-    if tok.lower() in lex:
+def in_lexicon(model: Model, token: str) -> bool:
+    return model.find_word(token.lower()) != -1
+
+
+def resolve(tok: str, aliases: dict, model: Model) -> list[str] | None:
+    if in_lexicon(model, tok):
         return [tok]
     sub = aliases.get(tok) or aliases.get(tok.lower())
     if not sub:
         return None
-    if all(s.lower() in lex for s in sub):
+    if all(in_lexicon(model, s) for s in sub):
         return sub
     return None
 
@@ -50,18 +45,26 @@ def main() -> None:
     parser.add_argument("--vocab", type=Path, default=Path("vocab.json"))
     parser.add_argument("--aliases", type=Path, default=Path("aliases.json"))
     parser.add_argument("--model", type=Path,
-                        default=Path(os.environ.get("VOSK_MODEL", "./model")),
-                        help="Vosk model dir (env VOSK_MODEL or ./model)")
+                        default=Path(os.environ.get("VOSK_MODEL", "./model")))
     args = parser.parse_args()
 
+    SetLogLevel(-1)
     vocab = json.loads(args.vocab.read_text())
-    lex = load_lexicon(args.model)
     aliases = json.loads(args.aliases.read_text()) if args.aliases.exists() else {}
+    model = Model(str(args.model))
+
+    # Sanity-check the API: if a common word comes back missing, find_word isn't
+    # working against this model and the rest of the report would be meaningless.
+    if model.find_word("hello") == -1:
+        print("ERROR: Model.find_word('hello') returned -1. The API is not "
+              "functioning against this model; cannot perform lexicon check.",
+              file=sys.stderr)
+        raise SystemExit(2)
 
     tokens = sorted(collect_tokens(vocab))
     in_lex, resolved, oov = [], [], []
     for tok in tokens:
-        r = resolve(tok, aliases, lex)
+        r = resolve(tok, aliases, model)
         if r == [tok]:
             in_lex.append(tok)
         elif r is not None:
@@ -69,7 +72,7 @@ def main() -> None:
         else:
             oov.append(tok)
 
-    print(f"lexicon: {len(lex)} words loaded from {args.model}")
+    print(f"model:   {args.model}")
     print(f"vocab:   {len(tokens)} unique tokens")
     print(f"  in-lexicon:  {len(in_lex)}")
     print(f"  via alias:   {len(resolved)}")
