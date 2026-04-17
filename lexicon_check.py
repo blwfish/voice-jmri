@@ -1,8 +1,9 @@
 """Check vocab.json tokens against the Vosk model lexicon; flag OOV words.
 
-Uses `Model.find_word()` which returns -1 for words not in the lexicon.
-(The small Vosk model doesn't ship a readable words.txt, so the C-API
-lookup is the only reliable check.)
+Uses the C-API binding `Model.vosk_model_find_word(word)` which returns
+-1 for words not in the lexicon. (The small Vosk model doesn't ship a
+readable words.txt, and Vosk 0.3.44's Python wrapper doesn't expose a
+high-level `find_word` method, so the raw C name is what we call.)
 
 Vosk's pre-compiled HCLG graph can only emit words already in its lexicon —
 custom pronunciations require rebuilding the graph, which is out of scope
@@ -26,7 +27,7 @@ def collect_tokens(vocab: dict) -> set[str]:
 
 
 def in_lexicon(model: Model, token: str) -> bool:
-    return model.find_word(token.lower()) != -1
+    return model.vosk_model_find_word(token.lower()) != -1
 
 
 def resolve(tok: str, aliases: dict, model: Model) -> list[str] | None:
@@ -55,8 +56,8 @@ def main() -> None:
 
     # Sanity-check the API: if a common word comes back missing, find_word isn't
     # working against this model and the rest of the report would be meaningless.
-    if model.find_word("hello") == -1:
-        print("ERROR: Model.find_word('hello') returned -1. The API is not "
+    if model.vosk_model_find_word("hello") == -1:
+        print("ERROR: find_word('hello') returned -1. The API is not "
               "functioning against this model; cannot perform lexicon check.",
               file=sys.stderr)
         raise SystemExit(2)
