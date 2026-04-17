@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# vosk model (large binary, download separately)
+model/
+vosk-model-*/
+vosk-model-*.zip
+
+# local generated artifacts
+vocab.json
+aliases.json
